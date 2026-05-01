@@ -1,6 +1,7 @@
 services:
   - type: web
     name: citytech-cloud-server
+    rootDir: CityTech-Cloud-Server-Deploy
     env: node
     plan: free
     buildCommand: npm install
