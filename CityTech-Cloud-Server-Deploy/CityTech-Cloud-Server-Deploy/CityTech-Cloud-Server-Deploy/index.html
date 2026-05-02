@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment Ledger</title>
+    <meta name="theme-color" content="#12635a" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="loginView" class="auth-shell">
+        <div class="brand-panel">
+          <p class="eyebrow">City Tech</p>
+          <h1>CITY TECH</h1>
+        </div>
+
+        <form id="loginForm" class="login-card">
+          <div>
+            <label for="username">User name</label>
+            <input id="username" type="text" placeholder="Enter user name" autocomplete="username" required />
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" placeholder="Enter password" autocomplete="current-password" required />
+          </div>
+          <div class="server-box">
+            <label for="serverUrl">Shared server URL</label>
+            <div class="inline-form">
+              <input id="serverUrl" type="url" placeholder="http://192.168.1.10:8080" />
+              <button id="saveServer" class="secondary" type="button">Connect</button>
+            </div>
+            <button id="scanQr" class="secondary hidden" type="button">Scan QR</button>
+            <p id="serverStatus" class="hint">Leave blank for this device only.</p>
+            <div id="qrConnectBox" class="qr-box">
+              <div id="qrCode"></div>
+              <p id="qrHelp" class="hint">Open Android app and tap Scan QR.</p>
+              <p id="qrUrl" class="hint">QR appears when opened with Windows desktop launcher.</p>
+            </div>
+          </div>
+          <button type="submit">Log in</button>
+          <p id="loginError" class="error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="staffView" class="app-view hidden">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Staff</p>
+            <h2>Payment Entry</h2>
+          </div>
+          <div class="top-actions">
+            <button id="staffSync" class="secondary" type="button">Sync</button>
+            <button class="secondary" data-action="logout">Log out</button>
+          </div>
+        </header>
+
+        <div class="workspace two-column">
+          <form id="paymentForm" class="panel">
+            <h3>Record Transaction</h3>
+            <div class="field-grid">
+              <div>
+                <label for="staffRegion">Region</label>
+                <select id="staffRegion" required></select>
+              </div>
+              <div>
+                <label for="staffCustomer">Customer</label>
+                <select id="staffCustomer" required></select>
+              </div>
+              <div>
+                <label for="paymentDate">Date</label>
+                <input id="paymentDate" type="date" required />
+              </div>
+              <div>
+                <label for="amount">Amount</label>
+                <input id="amount" type="number" min="0.01" step="0.01" placeholder="0.00" required />
+              </div>
+            </div>
+            <fieldset class="segmented">
+              <legend>Payment method</legend>
+              <label><input type="radio" name="method" value="Cash" checked /> Cash</label>
+              <label><input type="radio" name="method" value="Bank" /> Bank</label>
+            </fieldset>
+            <div>
+              <label for="notes">Notes</label>
+              <textarea id="notes" rows="3" placeholder="Receipt number, bank reference, or remarks"></textarea>
+            </div>
+            <button type="submit">Save Transaction</button>
+            <p id="paymentMessage" class="success" role="status"></p>
+          </form>
+
+          <section class="panel">
+            <div class="section-head">
+              <h3>Recent Entries</h3>
+              <span id="staffTotal" class="pill">0.00</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Region</th>
+                    <th>Customer</th>
+                    <th>Method</th>
+                    <th class="numeric">Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="staffTransactions"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="adminView" class="app-view hidden">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Admin</p>
+            <h2>Regions, Customers, and Transactions</h2>
+          </div>
+          <div class="top-actions">
+            <button id="adminSync" class="secondary" type="button">Sync</button>
+            <button class="secondary" data-action="logout">Log out</button>
+          </div>
+        </header>
+
+        <div class="workspace admin-grid">
+          <section class="panel">
+            <h3>Add Region</h3>
+            <form id="regionForm" class="inline-form">
+              <input id="newRegion" placeholder="Region name" required />
+              <button type="submit">Add</button>
+            </form>
+            <ul id="regionList" class="list"></ul>
+          </section>
+
+          <section class="panel">
+            <h3>Add Customer</h3>
+            <form id="customerForm">
+              <div>
+                <label for="adminRegion">Region</label>
+                <select id="adminRegion" required></select>
+              </div>
+              <div>
+                <label for="newCustomer">Customer name</label>
+                <input id="newCustomer" placeholder="Customer name" required />
+              </div>
+              <button type="submit">Add Customer</button>
+            </form>
+            <ul id="customerList" class="list"></ul>
+            <div class="import-box">
+              <h4>Import Customers</h4>
+              <p class="hint">Excel format: one column named CUSTOMER NAME.</p>
+              <input id="customerImportFile" type="file" accept=".xlsx,.xls" />
+              <button id="importCustomers" class="secondary" type="button">Import Excel</button>
+              <p id="importMessage" class="hint" role="status"></p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>User Settings</h3>
+            <form id="userForm">
+              <div class="field-grid">
+                <div>
+                  <label for="newUsername">User name</label>
+                  <input id="newUsername" placeholder="User name" required />
+                </div>
+                <div>
+                  <label for="newUserPassword">Password</label>
+                  <input id="newUserPassword" type="password" placeholder="Password" required />
+                </div>
+                <div>
+                  <label for="newUserRole">Role</label>
+                  <select id="newUserRole" required>
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit">Add User</button>
+            </form>
+            <ul id="userList" class="list user-list"></ul>
+          </section>
+
+          <section class="panel report-panel">
+            <div class="section-head report-head">
+              <h3>Transaction Report</h3>
+              <button id="exportExcel" class="secondary" type="button">Export Excel</button>
+            </div>
+            <div class="filters">
+              <div>
+                <label for="filterRegion">Region</label>
+                <select id="filterRegion"></select>
+              </div>
+              <div>
+                <label for="filterDate">Date</label>
+                <input id="filterDate" type="date" />
+              </div>
+              <button id="clearFilters" class="secondary" type="button">Clear</button>
+            </div>
+            <div class="summary-strip">
+              <span>Total: <strong id="reportTotal">0.00</strong></span>
+              <span>Cash: <strong id="cashTotal">0.00</strong></span>
+              <span>Bank: <strong id="bankTotal">0.00</strong></span>
+            </div>
+            <div class="table-wrap">
+              <table id="reportTable">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Region</th>
+                    <th>Customer</th>
+                    <th>Method</th>
+                    <th>Notes</th>
+                    <th class="numeric">Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="adminTransactions"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="qrcode.min.js?v=4"></script>
+    <script src="app.js?v=4"></script>
+  </body>
+</html>
