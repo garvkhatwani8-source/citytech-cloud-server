@@ -3,8 +3,26 @@ const SERVER_URL_KEY = "regional-payment-ledger-server-url";
 
 const sampleData = {
   users: [
-    { id: "admin-user", username: "admin", password: "admin123", role: "admin", restricted: false },
-    { id: "staff-user", username: "staff", password: "staff123", role: "staff", restricted: false },
+    {
+      id: "admin-user",
+      username: "admin",
+      password: "admin123",
+      role: "admin",
+      restricted: false,
+      assignedRegionId: "",
+      editPermission: "direct",
+      deletePermission: "direct",
+    },
+    {
+      id: "staff-user",
+      username: "staff",
+      password: "staff123",
+      role: "staff",
+      restricted: false,
+      assignedRegionId: "",
+      editPermission: "request",
+      deletePermission: "request",
+    },
   ],
   regions: [
     {
@@ -25,6 +43,7 @@ const sampleData = {
     },
   ],
   transactions: [],
+  requests: [],
 };
 
 let state = loadState();
@@ -44,6 +63,7 @@ const els = {
   password: document.querySelector("#password"),
   loginError: document.querySelector("#loginError"),
   serverUrl: document.querySelector("#serverUrl"),
+  serverBox: document.querySelector(".server-box"),
   saveServer: document.querySelector("#saveServer"),
   scanQr: document.querySelector("#scanQr"),
   serverStatus: document.querySelector("#serverStatus"),
@@ -73,17 +93,23 @@ const els = {
   newUsername: document.querySelector("#newUsername"),
   newUserPassword: document.querySelector("#newUserPassword"),
   newUserRole: document.querySelector("#newUserRole"),
+  newUserRegion: document.querySelector("#newUserRegion"),
+  newUserEditPermission: document.querySelector("#newUserEditPermission"),
+  newUserDeletePermission: document.querySelector("#newUserDeletePermission"),
   userList: document.querySelector("#userList"),
   filterRegion: document.querySelector("#filterRegion"),
   filterDate: document.querySelector("#filterDate"),
   clearFilters: document.querySelector("#clearFilters"),
   exportExcel: document.querySelector("#exportExcel"),
   adminTransactions: document.querySelector("#adminTransactions"),
+  requestList: document.querySelector("#requestList"),
   reportTotal: document.querySelector("#reportTotal"),
   cashTotal: document.querySelector("#cashTotal"),
   bankTotal: document.querySelector("#bankTotal"),
   staffSync: document.querySelector("#staffSync"),
   adminSync: document.querySelector("#adminSync"),
+  adminTabs: document.querySelectorAll("[data-admin-tab]"),
+  adminPanels: document.querySelectorAll("[data-admin-panel]"),
 };
 
 function loadState() {
@@ -103,9 +129,27 @@ function loadState() {
 
 function normalizeState(data) {
   return {
-    users: Array.isArray(data.users) && data.users.length ? data.users : JSON.parse(JSON.stringify(sampleData.users)),
+    users:
+      Array.isArray(data.users) && data.users.length
+        ? data.users.map(normalizeUser)
+        : JSON.parse(JSON.stringify(sampleData.users)),
     regions: Array.isArray(data.regions) ? data.regions : [],
     transactions: Array.isArray(data.transactions) ? data.transactions : [],
+    requests: Array.isArray(data.requests) ? data.requests : [],
+  };
+}
+
+function normalizeUser(user) {
+  const role = user.role === "admin" ? "admin" : "staff";
+  return {
+    id: user.id || uid(),
+    username: user.username || "",
+    password: user.password || "",
+    role,
+    restricted: Boolean(user.restricted),
+    assignedRegionId: user.assignedRegionId || "",
+    editPermission: role === "admin" ? "direct" : user.editPermission || "request",
+    deletePermission: role === "admin" ? "direct" : user.deletePermission || "request",
   };
 }
 
@@ -145,10 +189,14 @@ function connectToServer(server) {
   serverBaseUrl = normalizeServerUrl(server);
   if (serverBaseUrl) {
     localStorage.setItem(SERVER_URL_KEY, serverBaseUrl);
+    els.qrConnectBox?.classList.add("hidden");
+    els.scanQr?.classList.add("hidden");
   } else {
     localStorage.removeItem(SERVER_URL_KEY);
+    loadQrConnect();
   }
   els.serverUrl.value = serverBaseUrl;
+  updateConnectionVisibility();
   setServerStatus(serverBaseUrl ? "Connecting..." : "Using this device only.");
   return loadServerState();
 }
@@ -159,6 +207,10 @@ window.cityTechApplyQrServer = (server) => {
 
 async function loadQrConnect() {
   if (!els.qrConnectBox) return;
+  if (serverBaseUrl) {
+    els.qrConnectBox.classList.add("hidden");
+    return;
+  }
   els.qrConnectBox.classList.remove("hidden");
   if (location.protocol === "file:") {
     els.qrUrl.textContent = "Run OPEN-CITY-TECH-DESKTOP.cmd to show the connection QR.";
@@ -200,6 +252,15 @@ function renderQr(serverUrl) {
   } catch {
     els.qrUrl.textContent = serverUrl;
     els.qrConnectBox.classList.remove("hidden");
+  }
+}
+
+function updateConnectionVisibility() {
+  const isAndroidApp = Boolean(window.CityTechAndroid?.scanQr);
+  const connectedAndroid = isAndroidApp && Boolean(serverBaseUrl);
+  els.serverBox?.classList.toggle("hidden", connectedAndroid);
+  if (!serverBaseUrl && isAndroidApp) {
+    els.scanQr?.classList.remove("hidden");
   }
 }
 
@@ -262,6 +323,19 @@ function findCustomer(regionId, customerId) {
   return findRegion(regionId)?.customers.find((customer) => customer.id === customerId);
 }
 
+function availableRegionsForUser(user = currentUser) {
+  if (!user || user.role === "admin" || !user.assignedRegionId) return state.regions;
+  return state.regions.filter((region) => region.id === user.assignedRegionId);
+}
+
+function canSeeTransaction(transaction, user = currentUser) {
+  return !user || user.role === "admin" || !user.assignedRegionId || transaction.regionId === user.assignedRegionId;
+}
+
+function visibleTransactionsForUser(user = currentUser) {
+  return state.transactions.filter((transaction) => canSeeTransaction(transaction, user));
+}
+
 function setView(view) {
   [els.loginView, els.staffView, els.adminView].forEach((section) => section.classList.add("hidden"));
   view.classList.remove("hidden");
@@ -280,9 +354,17 @@ function fillSelect(select, options, placeholder = "Select") {
 }
 
 function refreshRegionSelectors() {
-  fillSelect(els.staffRegion, state.regions, "Select region");
+  const staffRegions = availableRegionsForUser();
+  fillSelect(els.staffRegion, staffRegions, "Select region");
+  if (currentUser?.role === "staff" && currentUser.assignedRegionId) {
+    els.staffRegion.value = currentUser.assignedRegionId;
+    els.staffRegion.disabled = true;
+  } else {
+    els.staffRegion.disabled = false;
+  }
   fillSelect(els.adminRegion, state.regions, "Select region");
   fillSelect(els.filterRegion, state.regions, "All regions");
+  fillSelect(els.newUserRegion, state.regions, "No assigned region");
   refreshStaffCustomers();
   refreshCustomerList();
 }
@@ -299,14 +381,36 @@ function refreshCustomerList() {
   }
   const customers = region?.customers ?? [];
   els.customerList.innerHTML = customers.length
-    ? customers.map((customer) => `<li><span>${escapeHtml(customer.name)}</span><small>${escapeHtml(region.name)}</small></li>`).join("")
+    ? customers
+        .map(
+          (customer) => `
+            <li>
+              <span><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(region.name)}</small></span>
+              <span class="user-actions">
+                <button class="secondary" type="button" data-customer-action="edit" data-customer-id="${escapeHtml(customer.id)}">Edit</button>
+                <button class="secondary danger-button" type="button" data-customer-action="delete" data-customer-id="${escapeHtml(customer.id)}">Delete</button>
+              </span>
+            </li>
+          `,
+        )
+        .join("")
     : `<li><span>No customers yet</span><small>Add one above</small></li>`;
 }
 
 function refreshRegionList() {
   els.regionList.innerHTML = state.regions.length
     ? state.regions
-        .map((region) => `<li><span>${escapeHtml(region.name)}</span><small>${region.customers.length} customer(s)</small></li>`)
+        .map(
+          (region) => `
+            <li>
+              <span><strong>${escapeHtml(region.name)}</strong><small>${region.customers.length} customer(s)</small></span>
+              <span class="user-actions">
+                <button class="secondary" type="button" data-region-action="edit" data-region-id="${escapeHtml(region.id)}">Edit</button>
+                <button class="secondary danger-button" type="button" data-region-action="delete" data-region-id="${escapeHtml(region.id)}">Delete</button>
+              </span>
+            </li>
+          `,
+        )
         .join("")
     : `<li><span>No regions yet</span><small>Add one above</small></li>`;
 }
@@ -315,18 +419,23 @@ function refreshUserList() {
   els.userList.innerHTML = state.users
     .map((user) => {
       const protectedUser = user.username === "admin";
+      const assignedRegion = user.assignedRegionId ? findRegion(user.assignedRegionId)?.name || "Missing region" : "All regions";
       return `
         <li>
           <span>
-            ${escapeHtml(user.username)}
+            <strong>${escapeHtml(user.username)}</strong>
             <span class="badge">${escapeHtml(user.role)}</span>
             ${user.restricted ? `<span class="badge blocked">Restricted</span>` : ""}
+            <small>Password: ${escapeHtml(user.password)}</small>
+            <small>Region: ${escapeHtml(assignedRegion)}</small>
+            <small>Edit: ${escapeHtml(user.editPermission)} | Delete: ${escapeHtml(user.deletePermission)}</small>
           </span>
           <span class="user-actions">
+            <button class="secondary" type="button" data-user-action="edit" data-user-id="${escapeHtml(user.id)}">Edit</button>
             <button class="secondary" type="button" data-user-action="toggle" data-user-id="${escapeHtml(user.id)}">
               ${user.restricted ? "Unrestrict" : "Restrict"}
             </button>
-            <button class="secondary" type="button" data-user-action="delete" data-user-id="${escapeHtml(user.id)}" ${protectedUser ? "disabled" : ""}>Delete</button>
+            <button class="secondary danger-button" type="button" data-user-action="delete" data-user-id="${escapeHtml(user.id)}" ${protectedUser ? "disabled" : ""}>Delete</button>
           </span>
         </li>
       `;
@@ -334,15 +443,16 @@ function refreshUserList() {
     .join("");
 }
 
-function transactionRows(transactions, emptyText, includeNotes = false) {
+function transactionRows(transactions, emptyText, includeNotes = false, includeActions = false) {
   if (!transactions.length) {
-    const colspan = includeNotes ? 6 : 5;
+    const colspan = (includeNotes ? 6 : 5) + (includeActions ? 1 : 0);
     return `<tr><td class="empty-row" colspan="${colspan}">${emptyText}</td></tr>`;
   }
 
   return transactions
     .map((transaction) => {
       const notesCell = includeNotes ? `<td>${escapeHtml(transaction.notes || "-")}</td>` : "";
+      const actionsCell = includeActions ? `<td>${transactionActions(transaction)}</td>` : "";
       return `
         <tr>
           <td>${escapeHtml(transaction.date)}</td>
@@ -351,10 +461,30 @@ function transactionRows(transactions, emptyText, includeNotes = false) {
           <td>${escapeHtml(transaction.method)}</td>
           ${notesCell}
           <td class="numeric">${formatMoney(transaction.amount)}</td>
+          ${actionsCell}
         </tr>
       `;
     })
     .join("");
+}
+
+function transactionActions(transaction) {
+  if (currentUser?.role === "admin") {
+    return `
+      <span class="user-actions">
+        <button class="secondary" type="button" data-transaction-action="edit" data-transaction-id="${escapeHtml(transaction.id)}">Edit</button>
+        <button class="secondary danger-button" type="button" data-transaction-action="delete" data-transaction-id="${escapeHtml(transaction.id)}">Delete</button>
+      </span>
+    `;
+  }
+  const edit = currentUser?.editPermission || "none";
+  const del = currentUser?.deletePermission || "none";
+  return `
+    <span class="user-actions">
+      ${edit !== "none" ? `<button class="secondary" type="button" data-transaction-action="${edit === "direct" ? "edit" : "request-edit"}" data-transaction-id="${escapeHtml(transaction.id)}">${edit === "direct" ? "Edit" : "Request Edit"}</button>` : ""}
+      ${del !== "none" ? `<button class="secondary danger-button" type="button" data-transaction-action="${del === "direct" ? "delete" : "request-delete"}" data-transaction-id="${escapeHtml(transaction.id)}">${del === "direct" ? "Delete" : "Request Delete"}</button>` : ""}
+    </span>
+  `;
 }
 
 function getFilteredTransactions() {
@@ -365,11 +495,11 @@ function getFilteredTransactions() {
 }
 
 function refreshTransactions() {
-  const recent = [...state.transactions]
+  const recent = visibleTransactionsForUser()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 10);
   const staffTotal = recent.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-  els.staffTransactions.innerHTML = transactionRows(recent, "No transactions recorded yet.");
+  els.staffTransactions.innerHTML = transactionRows(recent, "No transactions recorded yet.", false, true);
   els.staffTotal.textContent = formatMoney(staffTotal);
 
   const filtered = getFilteredTransactions();
@@ -381,10 +511,42 @@ function refreshTransactions() {
     },
     { all: 0, cash: 0, bank: 0 },
   );
-  els.adminTransactions.innerHTML = transactionRows(filtered, "No transactions match this report.", true);
+  els.adminTransactions.innerHTML = transactionRows(filtered, "No transactions match this report.", true, true);
   els.reportTotal.textContent = formatMoney(totals.all);
   els.cashTotal.textContent = formatMoney(totals.cash);
   els.bankTotal.textContent = formatMoney(totals.bank);
+  refreshRequestList();
+}
+
+function refreshRequestList() {
+  if (!els.requestList) return;
+  const pending = state.requests.filter((request) => request.status === "pending");
+  els.requestList.innerHTML = pending.length
+    ? pending
+        .map((request) => {
+          const transaction = state.transactions.find((item) => item.id === request.transactionId);
+          const detail =
+            request.type === "edit" && request.proposed
+              ? `${request.proposed.date}, ${request.proposed.customerName}, ${request.proposed.method}, ${formatMoney(request.proposed.amount)}`
+              : transaction
+                ? `${transaction.date}, ${transaction.customerName}, ${formatMoney(transaction.amount)}`
+                : "Transaction no longer exists";
+          return `
+            <li>
+              <span>
+                <strong>${escapeHtml(request.type === "edit" ? "Edit request" : "Delete request")}</strong>
+                <small>By ${escapeHtml(request.requestedByName || "staff")} on ${escapeHtml(new Date(request.requestedAt).toLocaleString())}</small>
+                <small>${escapeHtml(detail)}</small>
+              </span>
+              <span class="user-actions">
+                <button class="secondary" type="button" data-request-action="approve" data-request-id="${escapeHtml(request.id)}">Approve</button>
+                <button class="secondary danger-button" type="button" data-request-action="deny" data-request-id="${escapeHtml(request.id)}">Deny</button>
+              </span>
+            </li>
+          `;
+        })
+        .join("")
+    : `<li><span>No pending requests</span><small>Staff edit/delete requests appear here</small></li>`;
 }
 
 function refreshAll() {
@@ -441,6 +603,107 @@ function addTransaction(event) {
   els.paymentMessage.textContent = "Transaction saved.";
 }
 
+function collectTransactionEdits(transaction) {
+  const regionOptions = state.regions.map((region) => `${region.id}: ${region.name}`).join("\n");
+  const regionId = prompt(`Region ID:\n${regionOptions}`, transaction.regionId)?.trim();
+  const region = findRegion(regionId);
+  if (!region) return null;
+  const customerOptions = region.customers.map((customer) => `${customer.id}: ${customer.name}`).join("\n");
+  const customerId = prompt(`Customer ID:\n${customerOptions}`, transaction.customerId)?.trim();
+  const customer = findCustomer(region.id, customerId);
+  if (!customer) return null;
+  const date = prompt("Date", transaction.date)?.trim();
+  const method = prompt("Payment method: Cash or Bank", transaction.method)?.trim();
+  const amount = Number(prompt("Amount", transaction.amount));
+  const notes = prompt("Notes", transaction.notes || "");
+  if (!date || !["Cash", "Bank"].includes(method) || amount <= 0 || notes === null) return null;
+  return {
+    ...transaction,
+    date,
+    regionId: region.id,
+    regionName: region.name,
+    customerId: customer.id,
+    customerName: customer.name,
+    method,
+    amount,
+    notes: notes.trim(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function requestTransactionChange(transaction, type, proposed = null) {
+  const existing = state.requests.find(
+    (request) => request.status === "pending" && request.transactionId === transaction.id && request.type === type,
+  );
+  if (existing) {
+    els.paymentMessage.textContent = "A pending request already exists for this transaction.";
+    return;
+  }
+  state.requests.push({
+    id: uid(),
+    type,
+    status: "pending",
+    transactionId: transaction.id,
+    requestedBy: currentUser?.id || "",
+    requestedByName: currentUser?.username || "",
+    requestedAt: new Date().toISOString(),
+    proposed,
+  });
+  saveState();
+  refreshAll();
+  els.paymentMessage.textContent = `${type === "edit" ? "Edit" : "Delete"} request sent to admin.`;
+}
+
+function handleTransactionAction(event) {
+  const button = event.target.closest("button[data-transaction-action]");
+  if (!button) return;
+  const transaction = state.transactions.find((item) => item.id === button.dataset.transactionId);
+  if (!transaction || !canSeeTransaction(transaction)) return;
+  const action = button.dataset.transactionAction;
+  if (action === "edit") {
+    const edited = collectTransactionEdits(transaction);
+    if (!edited) return;
+    Object.assign(transaction, edited);
+  }
+  if (action === "delete") {
+    if (!confirm("Delete this transaction permanently?")) return;
+    state.transactions = state.transactions.filter((item) => item.id !== transaction.id);
+    state.requests = state.requests.filter((request) => request.transactionId !== transaction.id);
+  }
+  if (action === "request-edit") {
+    const edited = collectTransactionEdits(transaction);
+    if (!edited) return;
+    requestTransactionChange(transaction, "edit", edited);
+    return;
+  }
+  if (action === "request-delete") {
+    requestTransactionChange(transaction, "delete");
+    return;
+  }
+  saveState();
+  refreshAll();
+}
+
+function handleRequestListClick(event) {
+  const button = event.target.closest("button[data-request-action]");
+  if (!button) return;
+  const request = state.requests.find((item) => item.id === button.dataset.requestId);
+  if (!request) return;
+  const transaction = state.transactions.find((item) => item.id === request.transactionId);
+  if (button.dataset.requestAction === "approve" && transaction) {
+    if (request.type === "delete") {
+      state.transactions = state.transactions.filter((item) => item.id !== transaction.id);
+    }
+    if (request.type === "edit" && request.proposed) {
+      Object.assign(transaction, request.proposed, { updatedAt: new Date().toISOString() });
+    }
+  }
+  request.status = button.dataset.requestAction === "approve" ? "approved" : "denied";
+  request.resolvedAt = new Date().toISOString();
+  saveState();
+  refreshAll();
+}
+
 function addRegion(event) {
   event.preventDefault();
   const name = els.newRegion.value.trim();
@@ -469,11 +732,60 @@ function addCustomer(event) {
   refreshAll();
 }
 
+function handleRegionListClick(event) {
+  const button = event.target.closest("button[data-region-action]");
+  if (!button) return;
+  const region = findRegion(button.dataset.regionId);
+  if (!region) return;
+  if (button.dataset.regionAction === "edit") {
+    const name = prompt("Region name", region.name)?.trim();
+    if (!name) return;
+    region.name = name;
+    state.transactions.forEach((transaction) => {
+      if (transaction.regionId === region.id) transaction.regionName = name;
+    });
+  }
+  if (button.dataset.regionAction === "delete") {
+    if (!confirm(`Delete ${region.name} and its customers? Transactions will stay in the report.`)) return;
+    state.regions = state.regions.filter((item) => item.id !== region.id);
+    state.users.forEach((user) => {
+      if (user.assignedRegionId === region.id) user.assignedRegionId = "";
+    });
+  }
+  saveState();
+  refreshAll();
+}
+
+function handleCustomerListClick(event) {
+  const button = event.target.closest("button[data-customer-action]");
+  if (!button) return;
+  const region = findRegion(els.adminRegion.value) ?? state.regions[0];
+  const customer = region?.customers.find((item) => item.id === button.dataset.customerId);
+  if (!region || !customer) return;
+  if (button.dataset.customerAction === "edit") {
+    const name = prompt("Customer name", customer.name)?.trim();
+    if (!name) return;
+    customer.name = name;
+    state.transactions.forEach((transaction) => {
+      if (transaction.customerId === customer.id) transaction.customerName = name;
+    });
+  }
+  if (button.dataset.customerAction === "delete") {
+    if (!confirm(`Delete customer ${customer.name}? Existing transactions will stay in the report.`)) return;
+    region.customers = region.customers.filter((item) => item.id !== customer.id);
+  }
+  saveState();
+  refreshAll();
+}
+
 function addUser(event) {
   event.preventDefault();
   const username = els.newUsername.value.trim();
   const password = els.newUserPassword.value;
   const role = els.newUserRole.value;
+  const assignedRegionId = role === "staff" ? els.newUserRegion.value : "";
+  const editPermission = role === "admin" ? "direct" : els.newUserEditPermission.value;
+  const deletePermission = role === "admin" ? "direct" : els.newUserDeletePermission.value;
   if (!username || !password || !role) return;
   const exists = state.users.some((user) => user.username.toLowerCase() === username.toLowerCase());
   if (exists) {
@@ -482,9 +794,10 @@ function addUser(event) {
     els.newUsername.setCustomValidity("");
     return;
   }
-  state.users.push({ id: uid(), username, password, role, restricted: false });
+  state.users.push({ id: uid(), username, password, role, restricted: false, assignedRegionId, editPermission, deletePermission });
   saveState();
   els.userForm.reset();
+  refreshNewUserPermissionControls();
   refreshAll();
 }
 
@@ -493,6 +806,33 @@ function handleUserListClick(event) {
   if (!button) return;
   const user = state.users.find((item) => item.id === button.dataset.userId);
   if (!user || user.username === "admin" && button.dataset.userAction === "delete") return;
+  if (button.dataset.userAction === "edit") {
+    const username = prompt("User name", user.username)?.trim();
+    if (!username) return;
+    const password = prompt("Password", user.password);
+    if (password === null || !password) return;
+    const role = prompt("Role: admin or staff", user.role)?.trim().toLowerCase();
+    if (!["admin", "staff"].includes(role)) return;
+    const regionChoices = state.regions.map((region) => `${region.id}: ${region.name}`).join("\n");
+    const assignedRegionId =
+      role === "staff"
+        ? prompt(`Assigned region ID (leave blank for all regions):\n${regionChoices}`, user.assignedRegionId || "")?.trim() || ""
+        : "";
+    const editPermission =
+      role === "admin" ? "direct" : prompt("Edit permission: direct, request, or none", user.editPermission || "request")?.trim() || "request";
+    const deletePermission =
+      role === "admin"
+        ? "direct"
+        : prompt("Delete permission: direct, request, or none", user.deletePermission || "request")?.trim() || "request";
+    Object.assign(user, {
+      username,
+      password,
+      role,
+      assignedRegionId,
+      editPermission: ["direct", "request", "none"].includes(editPermission) ? editPermission : "request",
+      deletePermission: ["direct", "request", "none"].includes(deletePermission) ? deletePermission : "request",
+    });
+  }
   if (button.dataset.userAction === "toggle") {
     user.restricted = !user.restricted;
   }
@@ -532,6 +872,27 @@ async function importCustomers() {
     els.importMessage.textContent = `Imported ${result.added} customer(s).`;
   } catch (error) {
     els.importMessage.textContent = error.message;
+  }
+}
+
+function setAdminTab(tabName) {
+  els.adminTabs.forEach((button) => {
+    button.classList.toggle("active", button.dataset.adminTab === tabName);
+  });
+  els.adminPanels.forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.adminPanel !== tabName);
+  });
+}
+
+function refreshNewUserPermissionControls() {
+  const isAdmin = els.newUserRole.value === "admin";
+  els.newUserRegion.disabled = isAdmin;
+  els.newUserEditPermission.disabled = isAdmin;
+  els.newUserDeletePermission.disabled = isAdmin;
+  if (isAdmin) {
+    els.newUserRegion.value = "";
+    els.newUserEditPermission.value = "direct";
+    els.newUserDeletePermission.value = "direct";
   }
 }
 
@@ -635,9 +996,13 @@ document.querySelectorAll("[data-action='logout']").forEach((button) => {
 
 els.staffRegion.addEventListener("change", refreshStaffCustomers);
 els.paymentForm.addEventListener("submit", addTransaction);
+els.staffTransactions.addEventListener("click", handleTransactionAction);
 els.regionForm.addEventListener("submit", addRegion);
+els.regionList.addEventListener("click", handleRegionListClick);
 els.customerForm.addEventListener("submit", addCustomer);
+els.customerList.addEventListener("click", handleCustomerListClick);
 els.userForm.addEventListener("submit", addUser);
+els.newUserRole.addEventListener("change", refreshNewUserPermissionControls);
 els.userList.addEventListener("click", handleUserListClick);
 els.importCustomers.addEventListener("click", importCustomers);
 els.adminRegion.addEventListener("change", refreshCustomerList);
@@ -649,16 +1014,24 @@ els.clearFilters.addEventListener("click", () => {
   refreshTransactions();
 });
 els.exportExcel.addEventListener("click", exportExcel);
+els.adminTransactions.addEventListener("click", handleTransactionAction);
+els.requestList.addEventListener("click", handleRequestListClick);
+els.adminTabs.forEach((button) => {
+  button.addEventListener("click", () => setAdminTab(button.dataset.adminTab));
+});
 els.staffSync.addEventListener("click", loadServerState);
 els.adminSync.addEventListener("click", loadServerState);
 
 applyServerFromUrl();
-if (window.CityTechAndroid?.scanQr) {
+if (window.CityTechAndroid?.scanQr && !serverBaseUrl) {
   els.scanQr.classList.remove("hidden");
 }
 els.serverUrl.value = serverBaseUrl;
+updateConnectionVisibility();
 setServerStatus(serverBaseUrl ? `Server saved: ${serverBaseUrl}` : "Leave blank for this device only.");
 els.paymentDate.value = today();
+refreshNewUserPermissionControls();
+setAdminTab("customers");
 refreshAll();
 loadServerState();
 loadQrConnect();

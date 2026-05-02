@@ -59,6 +59,15 @@ button.secondary:hover {
   background: #dcebe7;
 }
 
+button.danger-button {
+  border-color: #f0c5c5;
+  color: var(--danger);
+}
+
+button.danger-button:hover {
+  background: #ffeceb;
+}
+
 label,
 legend {
   display: block;
@@ -189,6 +198,27 @@ th {
 .top-actions {
   display: flex;
   gap: 10px;
+}
+
+.admin-tabs {
+  background: #f8faf9;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px clamp(18px, 4vw, 44px);
+}
+
+.tab-button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--primary-dark);
+}
+
+.tab-button.active,
+.tab-button:hover {
+  background: #e5f1ee;
+  border-color: #bdd3ce;
 }
 
 h2,
@@ -393,6 +423,11 @@ form {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
+}
+
+.list li > span:first-child {
+  display: grid;
+  gap: 4px;
 }
 
 .list small {

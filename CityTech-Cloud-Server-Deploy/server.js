@@ -19,8 +19,26 @@ if (DATABASE_URL) {
 
 const sampleData = {
   users: [
-    { id: "admin-user", username: "admin", password: "admin123", role: "admin", restricted: false },
-    { id: "staff-user", username: "staff", password: "staff123", role: "staff", restricted: false },
+    {
+      id: "admin-user",
+      username: "admin",
+      password: "admin123",
+      role: "admin",
+      restricted: false,
+      assignedRegionId: "",
+      editPermission: "direct",
+      deletePermission: "direct",
+    },
+    {
+      id: "staff-user",
+      username: "staff",
+      password: "staff123",
+      role: "staff",
+      restricted: false,
+      assignedRegionId: "",
+      editPermission: "request",
+      deletePermission: "request",
+    },
   ],
   regions: [
     {
@@ -41,6 +59,7 @@ const sampleData = {
     },
   ],
   transactions: [],
+  requests: [],
 };
 
 const mimeTypes = {
@@ -55,9 +74,27 @@ const mimeTypes = {
 function normalizeState(data) {
   const normalized = data && typeof data === "object" ? data : {};
   return {
-    users: Array.isArray(normalized.users) && normalized.users.length ? normalized.users : sampleData.users,
+    users:
+      Array.isArray(normalized.users) && normalized.users.length
+        ? normalized.users.map(normalizeUser)
+        : sampleData.users,
     regions: Array.isArray(normalized.regions) ? normalized.regions : sampleData.regions,
     transactions: Array.isArray(normalized.transactions) ? normalized.transactions : [],
+    requests: Array.isArray(normalized.requests) ? normalized.requests : [],
+  };
+}
+
+function normalizeUser(user) {
+  const role = user.role === "admin" ? "admin" : "staff";
+  return {
+    id: user.id,
+    username: user.username,
+    password: user.password,
+    role,
+    restricted: Boolean(user.restricted),
+    assignedRegionId: user.assignedRegionId || "",
+    editPermission: role === "admin" ? "direct" : user.editPermission || "request",
+    deletePermission: role === "admin" ? "direct" : user.deletePermission || "request",
   };
 }
 
@@ -163,22 +200,23 @@ function send(response, status, body, type = "text/plain; charset=utf-8") {
 
 function mergeData(current, incoming) {
   const result = {
-    users: [...(current.users || sampleData.users)],
+    users: [...(current.users || sampleData.users)].map(normalizeUser),
     regions: [...(current.regions || [])],
     transactions: [...(current.transactions || [])],
+    requests: [...(current.requests || [])],
   };
 
   for (const incomingUser of incoming.users || []) {
+    const normalizedIncomingUser = normalizeUser(incomingUser);
     const user = result.users.find(
-      (item) => item.id === incomingUser.id || item.username.toLowerCase() === incomingUser.username.toLowerCase(),
+      (item) =>
+        item.id === normalizedIncomingUser.id ||
+        item.username.toLowerCase() === normalizedIncomingUser.username.toLowerCase(),
     );
     if (user) {
-      user.username = incomingUser.username;
-      user.password = incomingUser.password;
-      user.role = incomingUser.role;
-      user.restricted = Boolean(incomingUser.restricted);
+      Object.assign(user, normalizedIncomingUser);
     } else {
-      result.users.push(incomingUser);
+      result.users.push(normalizedIncomingUser);
     }
   }
 
@@ -201,7 +239,15 @@ function mergeData(current, incoming) {
   }
 
   for (const transaction of incoming.transactions || []) {
-    if (!result.transactions.some((item) => item.id === transaction.id)) result.transactions.push(transaction);
+    const existing = result.transactions.find((item) => item.id === transaction.id);
+    if (existing) Object.assign(existing, transaction);
+    else result.transactions.push(transaction);
+  }
+
+  for (const request of incoming.requests || []) {
+    const existing = result.requests.find((item) => item.id === request.id);
+    if (existing) Object.assign(existing, request);
+    else result.requests.push(request);
   }
 
   return result;
@@ -353,8 +399,7 @@ const server = http.createServer(async (request, response) => {
       if (!Array.isArray(parsed.regions) || !Array.isArray(parsed.transactions)) {
         throw new Error("Invalid data shape");
       }
-      const merged = mergeData(await loadState(), parsed);
-      send(response, 200, JSON.stringify(await saveState(merged)), "application/json; charset=utf-8");
+      send(response, 200, JSON.stringify(await saveState(parsed)), "application/json; charset=utf-8");
     } catch (error) {
       send(response, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8");
     }

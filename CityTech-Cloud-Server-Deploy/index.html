@@ -48,7 +48,6 @@
       <section id="staffView" class="app-view hidden">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Staff</p>
             <h2>Payment Entry</h2>
           </div>
           <div class="top-actions">
@@ -105,6 +104,7 @@
                     <th>Customer</th>
                     <th>Method</th>
                     <th class="numeric">Amount</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="staffTransactions"></tbody>
@@ -118,7 +118,7 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">Admin</p>
-            <h2>Regions, Customers, and Transactions</h2>
+            <h2>Payment Entry Admin</h2>
           </div>
           <div class="top-actions">
             <button id="adminSync" class="secondary" type="button">Sync</button>
@@ -126,8 +126,14 @@
           </div>
         </header>
 
+        <nav class="admin-tabs" aria-label="Admin settings">
+          <button class="tab-button active" type="button" data-admin-tab="customers">Customer Settings</button>
+          <button class="tab-button" type="button" data-admin-tab="users">User Settings</button>
+          <button class="tab-button" type="button" data-admin-tab="transactions">Transactions</button>
+        </nav>
+
         <div class="workspace admin-grid">
-          <section class="panel">
+          <section class="panel admin-panel" data-admin-panel="customers">
             <h3>Add Region</h3>
             <form id="regionForm" class="inline-form">
               <input id="newRegion" placeholder="Region name" required />
@@ -136,7 +142,7 @@
             <ul id="regionList" class="list"></ul>
           </section>
 
-          <section class="panel">
+          <section class="panel admin-panel" data-admin-panel="customers">
             <h3>Add Customer</h3>
             <form id="customerForm">
               <div>
@@ -159,7 +165,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel admin-panel hidden" data-admin-panel="users">
             <h3>User Settings</h3>
             <form id="userForm">
               <div class="field-grid">
@@ -178,13 +184,33 @@
                     <option value="admin">Admin</option>
                   </select>
                 </div>
+                <div>
+                  <label for="newUserRegion">Assigned Region</label>
+                  <select id="newUserRegion"></select>
+                </div>
+                <div>
+                  <label for="newUserEditPermission">Edit Transaction</label>
+                  <select id="newUserEditPermission">
+                    <option value="request">Request edit</option>
+                    <option value="direct">Edit directly</option>
+                    <option value="none">No access</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="newUserDeletePermission">Delete Transaction</label>
+                  <select id="newUserDeletePermission">
+                    <option value="request">Request delete</option>
+                    <option value="direct">Delete directly</option>
+                    <option value="none">No access</option>
+                  </select>
+                </div>
               </div>
               <button type="submit">Add User</button>
             </form>
             <ul id="userList" class="list user-list"></ul>
           </section>
 
-          <section class="panel report-panel">
+          <section class="panel admin-panel report-panel hidden" data-admin-panel="transactions">
             <div class="section-head report-head">
               <h3>Transaction Report</h3>
               <button id="exportExcel" class="secondary" type="button">Export Excel</button>
@@ -215,17 +241,23 @@
                     <th>Method</th>
                     <th>Notes</th>
                     <th class="numeric">Amount</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="adminTransactions"></tbody>
               </table>
             </div>
           </section>
+
+          <section class="panel admin-panel hidden" data-admin-panel="transactions">
+            <h3>Transaction Requests</h3>
+            <ul id="requestList" class="list request-list"></ul>
+          </section>
         </div>
       </section>
     </main>
 
-    <script src="qrcode.min.js?v=4"></script>
-    <script src="app.js?v=4"></script>
+    <script src="qrcode.min.js?v=5"></script>
+    <script src="app.js?v=5"></script>
   </body>
 </html>

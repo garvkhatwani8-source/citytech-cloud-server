@@ -5,14 +5,20 @@
       "username": "admin",
       "password": "admin123",
       "role": "admin",
-      "restricted": false
+      "restricted": false,
+      "assignedRegionId": "",
+      "editPermission": "direct",
+      "deletePermission": "direct"
     },
     {
       "id": "staff-user",
       "username": "staff",
       "password": "staff123",
       "role": "staff",
-      "restricted": false
+      "restricted": false,
+      "assignedRegionId": "",
+      "editPermission": "request",
+      "deletePermission": "request"
     }
   ],
   "regions": [
@@ -45,5 +51,6 @@
       ]
     }
   ],
-  "transactions": []
+  "transactions": [],
+  "requests": []
 }
